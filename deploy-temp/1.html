@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>中广核 - 数据大屏</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: "Microsoft YaHei", sans-serif; }
+        body { display: flex; height: 100vh; overflow: hidden; }
+
+        /* 左侧导航 */
+        .sidebar { width: 220px; background-color: #165DFF; color: white; padding: 15px 0; }
+        .sidebar .logo { padding: 10px 20px; margin-bottom: 20px; font-size: 14px; line-height: 1.4; }
+        .sidebar .menu-item { padding: 12px 20px; cursor: pointer; transition: background 0.2s; font-size: 14px; }
+        .sidebar .menu-item:hover { background-color: #0F4ECC; }
+        .sidebar .menu-item.active { background-color: #FFFFFF; color: #165DFF; font-weight: bold; }
+        .sidebar .sub-menu { padding-left: 30px; font-size: 13px; }
+
+        /* 主内容区 */
+        .main-content { flex: 1; display: flex; flex-direction: column; background-color: #F5F7FA; }
+        .top-bar { display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; background-color: white; border-bottom: 1px solid #E5E6EB; }
+        .top-bar .title { font-size: 18px; font-weight: bold; color: #1D2129; }
+        .top-bar .avatar { width: 32px; height: 32px; border-radius: 50%; background-color: #165DFF; color: white; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 13px; }
+
+        /* 标签页 */
+        .tabs { display: flex; padding: 15px 20px 0; gap: 10px; background-color: white; }
+        .tab { padding: 8px 16px; border: 1px solid #E5E6EB; border-bottom: none; border-radius: 4px 4px 0 0; background-color: #F2F3F5; cursor: pointer; font-size: 13px; color: #4E5969; }
+        .tab.active { background-color: #165DFF; color: white; border-color: #165DFF; }
+
+        /* 筛选区 */
+        .filter-bar { padding: 15px 20px; background-color: white; display: flex; flex-wrap: wrap; gap: 15px; align-items: flex-end; }
+        .filter-item { display: flex; flex-direction: column; gap: 5px; }
+        .filter-item label { font-size: 13px; color: #4E5969; }
+        .filter-item input, .filter-item select { padding: 6px 8px; border: 1px solid #DCDFE6; border-radius: 4px; min-width: 160px; font-size: 13px; outline: none; }
+        .filter-buttons { display: flex; gap: 8px; align-self: flex-end; margin-left: auto; }
+        .btn { padding: 6px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
+        .btn-primary { background-color: #165DFF; color: white; }
+        .btn-default { background-color: white; color: #4E5969; border: 1px solid #DCDFE6; }
+        .btn-primary:hover { background-color: #0F4ECC; }
+        .btn-default:hover { background-color: #F5F7FA; }
+
+        /* 表格 */
+        .table-container { flex: 1; padding: 0 20px 20px; overflow: auto; }
+        table { width: 100%; border-collapse: collapse; background-color: white; border: 1px solid #E5E6EB; }
+        th, td { padding: 10px; text-align: left; border-bottom: 1px solid #E5E6EB; font-size: 13px; }
+        th { background-color: #F7F8FA; color: #4E5969; font-weight: 600; }
+        tr:hover { background-color: #F5F7FA; }
+        tr.active { background-color: #ECF3FF; }
+        .status-online { color: #00B42A; display: flex; align-items: center; gap: 4px; font-size: 13px; }
+        .status-online::before { content: "●"; }
+        .status-offline { color: #F53F3F; display: flex; align-items: center; gap: 4px; font-size: 13px; }
+        .status-offline::before { content: "○"; }
+        .btn-detail { background-color: #165DFF; color: white; padding: 4px 10px; border-radius: 4px; font-size: 12px; cursor: pointer; border: none; }
+        .btn-more { background-color: white; color: #165DFF; border: 1px solid #165DFF; padding: 4px 10px; border-radius: 4px; font-size: 12px; cursor: pointer; }
+
+        /* 分页 */
+        .pagination { display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; background-color: white; border-top: 1px solid #E5E6EB; font-size: 13px; color: #4E5969; }
+        .pagination-right { display: flex; align-items: center; gap: 8px; }
+        .pagination input { padding: 4px 6px; border: 1px solid #DCDFE6; border-radius: 4px; width: 50px; text-align: center; font-size: 13px; }
+        .page-btn { padding: 4px 10px; border: 1px solid #DCDFE6; border-radius: 4px; background: white; cursor: pointer; font-size: 13px; color: #4E5969; }
+        .page-btn:hover { background: #F5F7FA; }
+        .page-btn.cur { background: #165DFF; color: white; border-color: #165DFF; }
+
+        /* ========== 详情弹窗 ========== */
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 1000; display: none; align-items: center; justify-content: center; }
+        .modal-overlay.show { display: flex; }
+        .modal { background: white; border-radius: 10px; width: 1200px; max-width: 96vw; max-height: 92vh; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 25px 80px rgba(0,0,0,0.4); }
+        .modal-head { padding: 16px 24px; border-bottom: 1px solid #E5E6EB; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
+        .modal-head h3 { font-size: 16px; color: #1D2129; }
+        .modal-close { width: 32px; height: 32px; border: none; background: none; font-size: 22px; cursor: pointer; color: #86909C; border-radius: 4px; }
+        .modal-close:hover { background: #F5F7FA; color: #1D2129; }
+        .modal-body { padding: 20px 24px; overflow-y: auto; flex: 1; }
+
+        /* 机柜标题 */
+        
+        /* 12参比横排 */
+        .ref-row { display: grid; grid-template-columns: repeat(12, 1fr); gap: 8px; margin-bottom: 16px; }
+        .ref-item {
+            background: #F5F7FA; border-radius: 6px; padding: 8px 6px;
+            text-align: center; border: 1px solid #E5E6EB;
+        }
+        .ref-item .ref-name { font-size: 11px; color: #86909C; margin-bottom: 4px; }
+        .ref-item .ref-val { font-size: 13px; font-weight: 700; color: #1D2129; font-family: Consolas, monospace; }
+        .ref-item .ref-val.warn { color: #FF7D00; }
+        .ref-item .ref-val.err { color: #F53F3F; }
+        .ref-item .ref-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 3px; vertical-align: middle; }
+
+
+        .cabinet-title { font-size: 18px; font-weight: 600; color: #165DFF; margin-bottom: 16px; padding: 10px 16px; background: #EEF3FF; border-radius: 6px; border-left: 4px solid #165DFF; }
+        .cabinet-title small { font-size: 12px; color: #86909C; font-weight: normal; margin-left: 10px; }
+
+        /* 6分区网格 */
+        .zone-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
+        .zone-card { background: #F5F7FA; border: 1px solid #E5E6EB; border-radius: 8px; padding: 14px 12px; }
+        .zone-card-hdr { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+        .zone-dot { width: 8px; height: 8px; border-radius: 50%; background: #00B42A; flex-shrink: 0; }
+        .zone-dot.warn { background: #FF7D00; }
+        .zone-dot.err { background: #F53F3F; }
+        .zone-name { font-size: 13px; font-weight: 600; color: #165DFF; }
+        .zone-data { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+        .zone-data-item { text-align: center; background: white; border-radius: 4px; padding: 6px 4px; }
+        .zone-data-item .lbl { font-size: 10px; color: #86909C; display: block; }
+        .zone-data-item .val { font-size: 14px; font-weight: 700; color: #1D2129; display: block; font-family: Consolas, monospace; }
+        .zone-data-item .val.warn { color: #FF7D00; }
+        .zone-data-item .val.err { color: #F53F3F; }
+
+        /* 分区开关 */
+        .zone-toggles { display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: #F5F7FA; border-radius: 6px; margin-bottom: 20px; flex-wrap: wrap; border: 1px solid #E5E6EB; }
+        .toggles-label { font-size: 13px; font-weight: 600; color: #1D2129; white-space: nowrap; }
+        .toggles { display: flex; gap: 8px; flex-wrap: wrap; }
+        .toggles label { display: flex; align-items: center; gap: 5px; font-size: 12px; color: #4E5969; cursor: pointer; padding: 3px 10px; border-radius: 4px; border: 1px solid #DCDFE6; background: white; user-select: none; }
+        .toggles label:hover { background: #EEF3FF; }
+        .toggles label input { accent-color: #165DFF; width: 14px; height: 14px; }
+        .toggles label.on { border-color: #165DFF; background: #EEF3FF; color: #165DFF; }
+        .tgl-btn { padding: 4px 12px; border-radius: 4px; font-size: 12px; cursor: pointer; border: none; }
+        .tgl-btn.on { background: #165DFF; color: white; }
+        .tgl-btn.off { background: #DCDFE6; color: #4E5969; }
+
+        /* 曲线图 */
+        .charts-title { font-size: 15px; font-weight: 700; color: #1D2129; margin-bottom: 16px; padding-left: 12px; border-left: 4px solid #165DFF; }
+        .charts-grid { display: grid; grid-template-columns: 1fr; gap: 20px; }
+        .chart-box { background: #F5F7FA; border-radius: 8px; padding: 16px; border: 1px solid #E5E6EB; }
+        .chart-box .chart { width: 100%; height: 280px; }
+        .chart-box .chart-name { font-size: 14px; color: #1D2129; text-align: center; margin-bottom: 12px; font-weight: 600; }
+    
+        /* 右侧滑出面板 */
+        .side-panel { position: fixed; right: 0; top: 0; width: 450px; height: 100vh; background: white; box-shadow: -2px 0 8px rgba(0,0,0,0.15); z-index: 1001; transform: translateX(100%); transition: transform 0.3s ease; overflow-y: auto; }
+        .side-panel.show { transform: translateX(0); }
+        .panel-head { padding: 16px 20px; border-bottom: 1px solid #E5E6EB; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; background: white; }
+        .panel-head h3 { font-size: 16px; font-weight: 600; color: #1D2129; }
+        .panel-close { width: 32px; height: 32px; border: none; background: none; font-size: 22px; cursor: pointer; color: #86909C; }
+        .panel-close:hover { background: #F5F7FA; }
+        .panel-body { padding: 20px; }
+        .form-group { margin-bottom: 16px; }
+        .form-group label { display: block; font-size: 13px; font-weight: 600; color: #1D2129; margin-bottom: 6px; }
+        .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 8px 10px; border: 1px solid #DCDFE6; border-radius: 4px; font-size: 13px; outline: none; }
+        .form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color: #165DFF; box-shadow: 0 0 4px rgba(22,93,255,0.1); }
+        .form-group textarea { resize: vertical; min-height: 80px; }
+        .form-btns { display: flex; gap: 10px; margin-top: 20px; }
+        .form-btns button { flex: 1; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600; }
+        .form-btns .btn-save { background: #165DFF; color: white; }
+        .form-btns .btn-cancel { background: #F5F7FA; color: #4E5969; border: 1px solid #DCDFE6; }
+        .form-btns .btn-save:hover { background: #0F4ECC; }
+        .form-btns .btn-cancel:hover { background: #EBEBEB; }
+
+        /* 报警设置 */
+        .alarm-settings { padding: 20px; }
+        .alarm-zone { background: #F5F7FA; border-radius: 6px; padding: 12px; margin-bottom: 12px; border: 1px solid #E5E6EB; }
+        .alarm-zone-title { font-size: 13px; font-weight: 600; color: #165DFF; margin-bottom: 10px; }
+        .alarm-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .alarm-inputs input { padding: 6px 8px; border: 1px solid #DCDFE6; border-radius: 4px; font-size: 12px; }
+
+        /* 数据图表 */
+        .data-chart-container { padding: 20px; height: 100%; display: flex; flex-direction: column; }
+        .data-chart { width: 100%; height: 400px; margin-bottom: 20px; flex-shrink: 0; }
+        .data-table { width: 100%; border-collapse: collapse; font-size: 12px; flex: 1; overflow-y: auto; }
+        .data-table th { background: #F7F8FA; padding: 8px; text-align: left; font-weight: 600; color: #4E5969; border-bottom: 1px solid #E5E6EB; }
+        .data-table td { padding: 8px; border-bottom: 1px solid #E5E6EB; }
+        .data-table tr:hover { background: #F5F7FA; }
+
+        /* 数据图大屏 */
+        .data-chart-panel { position: fixed; right: 0; top: 0; width: 80vw; height: 100vh; background: white; box-shadow: -2px 0 8px rgba(0,0,0,0.15); z-index: 1001; display: none; flex-direction: column; overflow: hidden; }
+        .data-chart-panel.show { display: flex; }
+        .data-chart-panel .panel-head { padding: 16px 20px; border-bottom: 1px solid #E5E6EB; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
+        .data-chart-panel .panel-head h3 { font-size: 16px; font-weight: 600; color: #1D2129; }
+        .data-chart-panel .panel-close { width: 32px; height: 32px; border: none; background: none; font-size: 22px; cursor: pointer; color: #86909C; }
+        .data-chart-panel .panel-close:hover { background: #F5F7FA; }
+        .data-chart-panel .panel-body { padding: 20px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; }
+        .data-chart-panel .query-bar { display: flex; gap: 10px; margin-bottom: 16px; align-items: flex-end; flex-shrink: 0; }
+        .data-chart-panel .query-bar .form-group { margin-bottom: 0; flex: 1; }
+        .data-chart-panel .query-bar .form-group label { font-size: 12px; }
+        .data-chart-panel .query-bar .form-group input { font-size: 12px; padding: 6px 8px; }
+        .data-chart-panel .query-bar button { padding: 6px 16px; font-size: 12px; height: 32px; }
+        /* 数据类型切换按钮 */
+        .data-type-btns { display: flex; gap: 8px; margin-bottom: 16px; flex-shrink: 0; }
+        .data-type-btn { padding: 8px 16px; border: 1px solid #DCDFE6; border-radius: 4px; background: white; color: #4E5969; cursor: pointer; font-size: 13px; font-weight: 500; transition: all 0.2s; }
+        .data-type-btn:hover { border-color: #165DFF; color: #165DFF; }
+        .data-type-btn.active { background: #165DFF; color: white; border-color: #165DFF; }
+
+        .data-chart-panel .data-chart { width: 100%; height: 185px; margin-bottom: 16px; flex-shrink: 0; }
+        .data-chart-panel .data-table-wrapper { flex: 1; overflow-y: auto; border: 1px solid #E5E6EB; border-radius: 4px; }
+        .data-chart-panel .data-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        .data-chart-panel .data-table th { background: #F7F8FA; padding: 8px; text-align: left; font-weight: 600; color: #4E5969; border-bottom: 1px solid #E5E6EB; position: sticky; top: 0; }
+        .data-chart-panel .data-table td { padding: 8px; border-bottom: 1px solid #E5E6EB; }
+        .data-chart-panel .data-table tr:hover { background: #F5F7FA; }
+</style>
+</head>
+<body>
+
+    <!-- 左侧导航 -->
+    <div class="sidebar">
+        <div class="logo">
+            <img src="https://www.cgn.cn/images/logo.png" alt="中广核" style="height:24px; vertical-align:middle;">
+            <div style="font-size:12px; margin-top:4px;">阳江核电有限公司</div>
+        </div>
+        <div class="menu-item active">设备管理</div>
+        <div class="menu-item sub-menu active">机柜列表</div>
+        <div class="menu-item sub-menu">设备列表</div>
+        <div class="menu-item">机组管理</div>
+        <div class="menu-item sub-menu">机组列表</div>
+        <div class="menu-item">报警管理</div>
+        <div class="menu-item sub-menu">报警信息</div>
+        <div class="menu-item">人员管理</div>
+        <div class="menu-item sub-menu">人员列表</div>
+        <div class="menu-item">系统管理</div>
+        <div class="menu-item sub-menu">角色管理</div>
+        <div class="menu-item sub-menu">菜单管理</div>
+        <div class="menu-item sub-menu">登录日志</div>
+    </div>
+
+    <!-- 主内容 -->
+    <div class="main-content">
+        <div class="top-bar">
+            <div class="title"> <a class="header-btn" href="index.html">
+                <span>📋</span>
+                <span>数据大屏</span>
+            </a>
+</div>
+            <div style="display:flex;align-items:center;gap:10px;">
+                <span style="font-size:13px;color:#4E5969;">2056</span>
+                <span style="font-size:12px;color:#86909C;">超级管理员</span>
+                <div class="avatar">A</div>
+            </div>
+        </div>
+
+        <div class="tabs">
+            <div class="tab">智能电位采集设备</div>
+            <div class="tab active">控制柜数据采集器</div>
+        </div>
+
+        <div class="filter-bar">
+            <div class="filter-item">
+                <label>机柜编号</label>
+                <input type="text" id="fNo" placeholder="请输入">
+            </div>
+            <div class="filter-item">
+                <label>设备名称</label>
+                <input type="text" id="fName" placeholder="请输入">
+            </div>
+            <div class="filter-item">
+                <label>所属机组</label>
+                <select id="fUnit">
+                    <option value="">请选择</option>
+                    <option value="3号机组">3号机组</option>
+                    <option value="2号机组">2号机组</option>
+                </select>
+            </div>
+            <div class="filter-item">
+                <label>在线状态</label>
+                <select id="fStatus">
+                    <option value="">请选择</option>
+                    <option value="online">在线</option>
+                    <option value="offline">离线</option>
+                </select>
+            </div>
+            <div class="filter-buttons">
+                <button class="btn btn-default" onclick="doReset()">重置</button>
+                <button class="btn btn-primary" onclick="doSearch()">查询</button>
+                <button class="btn btn-primary" onclick="doAdd()">新增</button>
+                <button class="btn btn-default" onclick="doBatchDel()">批量删除</button>
+                <button class="btn btn-primary" onclick="doExport()">导出</button>
+            </div>
+        </div>
+
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th><input type="checkbox" id="checkAll"></th>
+                        <th>机柜编号</th>
+                        <th>设备类型</th>
+                        <th>所属机组</th>
+                        <th>在线状态</th>
+                        <th>安装时间</th>
+                        <th>安装位置</th>
+                        <th>创建时间</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody"></tbody>
+            </table>
+        </div>
+
+        <div class="pagination">
+            <div id="pageInfo">第 1 / 1 页，共 0 条</div>
+            <div class="pagination-right">
+                <button class="page-btn" onclick="goPrev()">&#12288;&#12288;</button>
+                <span class="page-btn cur" id="curPage">1</span>
+                <button class="page-btn" onclick="goNext()">&#12288;&#12288;</button>
+                <span>到第</span>
+                <input type="text" id="jumpInput" value="1">
+                <span>页</span>
+                <button class="btn btn-primary" onclick="jumpTo()" style="padding:4px 10px;font-size:12px;">确定</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== 详情弹窗 ========== -->
+    <div class="modal-overlay" id="detailModal">
+        <div class="modal">
+            <div class="modal-head">
+                <h3>机柜详情</h3>
+                <button class="modal-close" onclick="closeModal()">&#215;</button>
+            </div>
+            <div class="modal-body">
+                <div class="cabinet-title" id="cabinetTitle"></div>
+                <div class="ref-row" id="refRow"></div>
+
+                <div class="zone-grid" id="zoneGrid"></div>
+                <div class="zone-toggles">
+                    <span class="toggles-label">分区显示：</span>
+                    <div class="toggles" id="zoneToggles"></div>
+                    <button class="tgl-btn on" onclick="toggleAll(true)">全选</button>
+                    <button class="tgl-btn off" onclick="toggleAll(false)">全不选</button>
+                </div>
+                <div class="charts-title">实时曲线 - 参比 / 电压 / 电流</div>
+                <div class="charts-grid">
+                    <div class="chart-box">
+                        <div class="chart-name">参比电压 (V)</div>
+                        <div class="chart" id="chartRef"></div>
+                    </div>
+                    <div class="chart-box">
+                        <div class="chart-name">输出电压 (V)</div>
+                        <div class="chart" id="chartVolt"></div>
+                    </div>
+                    <div class="chart-box">
+                        <div class="chart-name">输出电流 (A)</div>
+                        <div class="chart" id="chartCurr"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+<script>
+var allData = [
+    {id:1, cabinetNo:'3CPA001AR', deviceType:'控制柜数据采集器', unit:'3号机组', status:'offline', installTime:'2026-03-24 15:37:59', location:'A列', createTime:'2026-03-24 15:38:01'},
+    {id:2, cabinetNo:'3CPA002AR', deviceType:'控制柜数据采集器', unit:'3号机组', status:'offline', installTime:'2025-11-07 16:03:06', location:'B列', createTime:'2025-11-07 16:03:14'},
+    {id:3, cabinetNo:'3CPA101AR', deviceType:'控制柜数据采集器', unit:'3号机组', status:'online', installTime:'2025-09-15 10:15:34', location:'A列', createTime:'2025-09-15 10:19:31'},
+    {id:4, cabinetNo:'3CPA102AR', deviceType:'控制柜数据采集器', unit:'3号机组', status:'online', installTime:'2025-08-18 09:28:40', location:'B列', createTime:'2025-08-18 09:29:37'},
+    {id:5, cabinetNo:'3CPA103AR', deviceType:'控制柜数据采集器', unit:'3号机组', status:'online', installTime:'2025-08-10 14:20:00', location:'C列', createTime:'2025-08-10 14:25:00'},
+    {id:6, cabinetNo:'3CPA104AR', deviceType:'控制柜数据采集器', unit:'3号机组', status:'offline', installTime:'2025-07-05 11:10:00', location:'D列', createTime:'2025-07-05 11:15:00'},
+    {id:7, cabinetNo:'3CPA201AR', deviceType:'控制柜数据采集器', unit:'2号机组', status:'online', installTime:'2025-06-20 09:00:00', location:'A列', createTime:'2025-06-20 09:05:00'},
+    {id:8, cabinetNo:'3CPA202AR', deviceType:'控制柜数据采集器', unit:'2号机组', status:'online', installTime:'2025-06-15 16:30:00', location:'B列', createTime:'2025-06-15 16:35:00'},
+    {id:9, cabinetNo:'3CPA203AR', deviceType:'控制柜数据采集器', unit:'2号机组', status:'offline', installTime:'2025-05-10 10:00:00', location:'C列', createTime:'2025-05-10 10:10:00'}
+];
+
+var filtered = allData.slice();
+var currentPage = 1;
+var pageSize = 10;
+var selectedIds = [];
+var ZONE_COLORS = ['#165DFF','#00B42A','#FF7D00','#F53F3F','#722ED1','#14C9C9'];
+var chartRef = null, chartVolt = null, chartCurr = null;
+var currentZones = [];
+var toggleState = [true,true,true,true,true,true];
+
+document.addEventListener('DOMContentLoaded', function() {
+    renderTable();
+    document.getElementById('checkAll').addEventListener('change', function() {
+        var checked = this.checked;
+        filtered.slice((currentPage-1)*pageSize, currentPage*pageSize).forEach(function(d) {
+            var cb = document.querySelector('.row-check[data-id="'+d.id+'"]');
+            if (cb) cb.checked = checked;
+            var idx = selectedIds.indexOf(d.id);
+            if (checked && idx===-1) selectedIds.push(d.id);
+            else if (!checked) selectedIds = selectedIds.filter(function(x){return x!==d.id;});
+        });
+    });
+    document.querySelectorAll('.tab').forEach(function(t){t.addEventListener('click',function(){
+        document.querySelectorAll('.tab').forEach(function(x){x.classList.remove('active');});
+        this.classList.add('active');
+    });});
+    document.querySelectorAll('.menu-item').forEach(function(m){m.addEventListener('click',function(){
+        document.querySelectorAll('.menu-item').forEach(function(x){x.classList.remove('active');});
+        this.classList.add('active');
+        if(this.classList.contains('sub-menu'))this.parentElement.previousElementSibling.classList.add('active');
+    });});
+    document.getElementById('detailModal').addEventListener('click',function(e){if(e.target===this)closeModal();});
+});
+
+function renderTable() {
+    var total = filtered.length;
+    var tp = Math.ceil(total/pageSize)||1;
+    if(currentPage>tp)currentPage=tp;
+    var start=(currentPage-1)*pageSize;
+    var pageData=filtered.slice(start,start+pageSize);
+    document.getElementById('tableBody').innerHTML=pageData.map(function(d){
+        return '<tr>'+
+            '<td><input type="checkbox" class="row-check" data-id="'+d.id+'" '+(selectedIds.indexOf(d.id)>-1?'checked':'')+'></td>'+
+            '<td>'+d.cabinetNo+'</td>'+
+            '<td>'+d.deviceType+'</td>'+
+            '<td>'+d.unit+'</td>'+
+            '<td><span class="'+(d.status==='online'?'status-online':'status-offline')+'">'+(d.status==='online'?'在线':'离线')+'</span></td>'+
+            '<td>'+d.installTime+'</td>'+
+            '<td>'+d.location+'</td>'+
+            '<td>'+d.createTime+'</td>'+
+            '<td><button class="btn-detail" onclick="showDetail('+d.id+')">详情</button> <button class="btn-more" onclick="doMore(event, '+d.id+')">更多 &#9660;</button></td>'+
+            '</tr>';
+    }).join('');
+    document.getElementById('pageInfo').textContent='第 '+currentPage+' / '+tp+' 页，共 '+total+' 条';
+    document.getElementById('curPage').textContent=currentPage;
+    document.getElementById('jumpInput').value=currentPage;
+    document.querySelectorAll('.row-check').forEach(function(cb){
+        cb.addEventListener('change',function(){
+            var id=parseInt(this.dataset.id);
+            var idx=selectedIds.indexOf(id);
+            if(this.checked&&idx===-1)selectedIds.push(id);
+            else if(!this.checked)selectedIds=selectedIds.filter(function(x){return x!==id;});
+        });
+    });
+}
+
+function goPrev(){if(currentPage>1){currentPage--;renderTable();}}
+function goNext(){var tp=Math.ceil(filtered.length/pageSize)||1;if(currentPage<tp){currentPage++;renderTable();}}
+function jumpTo(){var v=parseInt(document.getElementById('jumpInput').value);var tp=Math.ceil(filtered.length/pageSize)||1;if(v>=1&&v<=tp){currentPage=v;renderTable();}}
+
+function doSearch(){
+    var no=document.getElementById('fNo').value.trim();
+    var nm=document.getElementById('fName').value.trim();
+    var un=document.getElementById('fUnit').value;
+    var st=document.getElementById('fStatus').value;
+    filtered=allData.filter(function(d){
+        if(no&&d.cabinetNo.indexOf(no)===-1)return false;
+        if(nm&&d.deviceType.indexOf(nm)===-1)return false;
+        if(un&&d.unit!==un)return false;
+        if(st&&d.status!==st)return false;
+        return true;
+    });
+    currentPage=1;
+    renderTable();
+}
+function doReset(){
+    document.getElementById('fNo').value='';
+    document.getElementById('fName').value='';
+    document.getElementById('fUnit').value='';
+    document.getElementById('fStatus').value='';
+    filtered=allData.slice();
+    currentPage=1;
+    renderTable();
+}
+function doAdd(){
+    var no=prompt('请输入新机柜编号：','3CPA'+(Math.floor(Math.random()*900)+100)+'AR');
+    if(!no)return;
+    var newItem={id:Math.max.apply(null,allData.map(function(d){return d.id;}))+1,cabinetNo:no,deviceType:'控制柜数据采集器',unit:'3号机组',status:'online',installTime:new Date().toLocaleString('zh-CN').replace(/\//g,'-'),location:'A列',createTime:new Date().toLocaleString('zh-CN').replace(/\//g,'-')};
+    allData.push(newItem);
+    filtered=allData.slice();
+    currentPage=Math.ceil(filtered.length/pageSize);
+    renderTable();
+    alert('新增成功！');
+}
+function doBatchDel(){
+    if(selectedIds.length===0){alert('请先选择要删除的项');return;}
+    if(!confirm('确定删除选中的 '+selectedIds.length+' 项吗？'))return;
+    allData=allData.filter(function(d){return selectedIds.indexOf(d.id)===-1;});
+    filtered=filtered.filter(function(d){return selectedIds.indexOf(d.id)===-1;});
+    selectedIds=[];
+    renderTable();
+    alert('批量删除成功！');
+}
+function doExport(){
+    var csv='\ufeff机柜编号,设备类型,所属机组,在线状态,安装时间,安装位置,创建时间\n';
+    filtered.forEach(function(d){csv+=d.cabinetNo+','+d.deviceType+','+d.unit+','+(d.status==='online'?'在线':'离线')+','+d.installTime+','+d.location+','+d.createTime+'\n';});
+    var blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
+    var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='机柜数据_'+(new Date().toISOString().slice(0,10))+'.csv';a.click();
+    alert('导出成功！共 '+filtered.length+' 条');
+}
+function doMore(event, id){
+    showMoreMenu(event, id);
+}
+
+// ========== 详情弹窗 ==========
+function showDetail(id) {
+    var item = allData.find(function(d){return d.id===id;});
+    if(!item)return;
+
+    // 生成6个分区的随机数据
+    // 生成12个参比数据
+    var refData = Array.from({length:12}, function(_, i) {
+        var err = Math.random() > 0.85;
+        var warn = !err && Math.random() > 0.75;
+        return {
+            name: '参比' + (i < 9 ? '0' : '') + (i + 1),
+            value: err ? -(0.98 + Math.random() * 0.1) : -(0.85 + Math.random() * 0.1),
+            alert: err ? 'err' : warn ? 'warn' : 'normal'
+        };
+    });
+
+    // 渲染12参比
+    var refColors = ['#165DFF','#00B42A','#FF7D00','#F53F3F','#722ED1','#14C9C9','#FF69B4','#00CED1','#9370DB','#20B2AA','#FF6347','#4682B4'];
+    document.getElementById('refRow').innerHTML = refData.map(function(r, i) {
+        var dotColor = r.alert === 'err' ? '#F53F3F' : r.alert === 'warn' ? '#FF7D00' : refColors[i % refColors.length];
+        var valCls = r.alert === 'err' ? 'err' : r.alert === 'warn' ? 'warn' : '';
+        return '<div class="ref-item">' +
+            '<div class="ref-name"><span class="ref-dot" style="background:' + dotColor + '"></span>' + r.name + '</div>' +
+            '<div class="ref-val ' + valCls + '">' + r.value.toFixed(3) + '</div>' +
+            '</div>';
+    }).join('');
+
+    currentZones = Array.from({length:6},function(_,i){
+        var err=Math.random()>0.8;
+        var warn=!err&&Math.random()>0.85;
+        return {
+            name:'分区'+(i+1),
+            color:ZONE_COLORS[i],
+            ref: err ? -(0.98+Math.random()*0.1) : -(0.85+Math.random()*0.1),
+            voltage: warn ? -(2.0+Math.random()*0.3) : -(1.5+Math.random()*0.3),
+            current: warn ? 4+Math.random()*2 : 2+Math.random()*2,
+            alert: err?'err':warn?'warn':'normal'
+        };
+    });
+    toggleState = [true,true,true,true,true,true];
+
+    // 渲染标题
+    document.getElementById('cabinetTitle').innerHTML = item.cabinetNo + '<small>' + item.deviceType + ' | ' + item.unit + ' | ' + (item.status==='online'?'在线':'离线') + '</small>';
+
+    // 渲染6分区卡片
+    document.getElementById('zoneGrid').innerHTML = currentZones.map(function(z,i){
+        var dotCls = z.alert==='err'?'err':z.alert==='warn'?'warn':'';
+        var refCls = z.alert==='err'?'err':z.alert==='warn'?'warn':'';
+        var voltCls = z.alert==='err'?'err':z.alert==='warn'?'warn':'';
+        var currCls = z.alert==='err'?'err':z.alert==='warn'?'warn':'';
+        return '<div class="zone-card">'+
+            '<div class="zone-card-hdr"><span class="zone-dot '+dotCls+'"></span><span class="zone-name">'+z.name+'</span></div>'+
+            '<div class="zone-data">'+
+                '<div class="zone-data-item"><span class="lbl">参比</span><span class="val '+refCls+'">'+z.ref.toFixed(3)+' V</span></div>'+
+                '<div class="zone-data-item"><span class="lbl">电压</span><span class="val '+voltCls+'">'+z.voltage.toFixed(3)+' V</span></div>'+
+                '<div class="zone-data-item"><span class="lbl">电流</span><span class="val '+currCls+'">'+z.current.toFixed(2)+' A</span></div>'+
+            '</div></div>';
+    }).join('');
+
+    // 渲染分区开关
+    renderToggles();
+
+    // 显示弹窗
+    document.getElementById('detailModal').classList.add('show');
+
+    // 渲染图表
+    setTimeout(renderCharts, 100);
+}
+
+function renderToggles() {
+    document.getElementById('zoneToggles').innerHTML = currentZones.map(function(z,i){
+        return '<label class="'+(toggleState[i]?'on':'')+'"><input type="checkbox" '+(toggleState[i]?'checked':'')+' onchange="toggleZone('+i+',this.checked)"> '+
+            '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:'+z.color+';vertical-align:middle;margin-right:2px;"></span>'+
+            z.name+'</label>';
+    }).join('');
+}
+
+function toggleZone(idx, checked) {
+    toggleState[idx] = checked;
+    var labels = document.querySelectorAll('#zoneToggles label');
+    if(labels[idx]) labels[idx].className = checked ? 'on' : '';
+    renderCharts();
+}
+
+function toggleAll(checked) {
+    for(var i=0;i<6;i++) toggleState[i]=checked;
+    document.querySelectorAll('#zoneToggles input').forEach(function(cb){cb.checked=checked;});
+    document.querySelectorAll('#zoneToggles label').forEach(function(lb){lb.className=checked?'on':'';});
+    renderCharts();
+}
+
+function genSeries(base, variance, count) {
+    var arr=[];
+    for(var i=0;i<count;i++) arr.push((base+(Math.random()-0.5)*variance).toFixed(3));
+    return arr;
+}
+
+function renderCharts() {
+    var checkedIdx = [];
+    for (var i = 0; i < 6; i++) if (toggleState[i]) checkedIdx.push(i);
+    var times = Array.from({length: 20}, function(_, i) {
+        var d = new Date();
+        d.setMinutes(d.getMinutes() - (20 - i));
+        return d.toLocaleTimeString('zh-CN', {hour: '2-digit', minute: '2-digit'});
+    });
+    function makeSeries(base, variance) {
+        return checkedIdx.map(function(i) {
+            return {
+                name: currentZones[i].name,
+                type: 'line',
+                smooth: true,
+                data: genSeries(base, variance, 20),
+                lineStyle: { color: currentZones[i].color, width: 2.5 },
+                itemStyle: { color: currentZones[i].color }
+            };
+        });
+    }
+    function makeOpt(series) {
+        return {
+            tooltip: { trigger: 'axis' },
+            legend: { data: checkedIdx.map(function(i) { return currentZones[i].name; }), top: 5, textStyle: { fontSize: 12, color: "#1D2129" } },
+            grid: { left: 60, right: 20, top: 50, bottom: 40 },
+            xAxis: { type: 'category', data: times, axisLabel: { fontSize: 11, color: '#4E5969' } },
+            yAxis: { type: 'value', axisLabel: { fontSize: 10, color: '#86909C' }, splitLine: { lineStyle: { color: '#F0F0F0' } } },
+            series: series
+        };
+    }
+    if (chartRef) chartRef.dispose();
+    chartRef = echarts.init(document.getElementById('chartRef'));
+    chartRef.setOption(makeOpt(makeSeries(-0.87, 0.05)));
+    if (chartVolt) chartVolt.dispose();
+    chartVolt = echarts.init(document.getElementById('chartVolt'));
+    chartVolt.setOption(makeOpt(makeSeries(-1.6, 0.2)));
+    if (chartCurr) chartCurr.dispose();
+    chartCurr = echarts.init(document.getElementById('chartCurr'));
+    chartCurr.setOption(makeOpt(makeSeries(2.5, 0.5)));
+}
+
+
+// ========== 更多菜单 ==========
+function showMoreMenu(event, id) {
+    var item = allData.find(function(d){return d.id===id;});
+    if(!item)return;
+    var btn = event.target;
+    var rect = btn.getBoundingClientRect();
+    var menu = '<div style="position:fixed;top:'+(rect.bottom+5)+'px;left:'+rect.left+'px;background:white;border-radius:8px;box-shadow:0 10px 40px rgba(0,0,0,0.2);z-index:999;min-width:180px;overflow:hidden;">' +
+        '<div style="padding:12px 0;">' +
+        '<div style="padding:10px 16px;cursor:pointer;font-size:13px;color:#1D2129;border-bottom:1px solid #E5E6EB;" onclick="closeMoreMenu();showEditPanel('+id+');closeMoreMenu()">✏️ 编辑</div>' +
+        '<div style="padding:10px 16px;cursor:pointer;font-size:13px;color:#1D2129;border-bottom:1px solid #E5E6EB;" onclick="closeMoreMenu();showAlarmPanel('+id+');closeMoreMenu()">🔔 报警设置</div>' +
+        '<div style="padding:10px 16px;cursor:pointer;font-size:13px;color:#1D2129;border-bottom:1px solid #E5E6EB;" onclick="closeMoreMenu();showDataChart('+id+');closeMoreMenu()">📊 数据图</div>' +
+        '<div style="padding:10px 16px;cursor:pointer;font-size:13px;color:#1D2129;border-bottom:1px solid #E5E6EB;" onclick="closeMoreMenu();showDataModify('+id+');closeMoreMenu()">📝 数据修改</div>' +
+        '<div style="padding:10px 16px;cursor:pointer;font-size:13px;color:#F53F3F;" onclick="closeMoreMenu();doDelete('+id+');closeMoreMenu()">🗑️ 删除</div>' +
+        '</div></div>' +
+        '<div style="position:fixed;inset:0;z-index:998;" onclick="closeMoreMenu()"></div>';
+    var container = document.createElement('div');
+    container.id = 'moreMenu';
+    container.innerHTML = menu;
+    document.body.appendChild(container);
+}
+function closeMoreMenu() {
+    var menu = document.getElementById('moreMenu');
+    if(menu) menu.remove();
+}
+
+// 编辑面板
+function showEditPanel(id) {
+    var item = allData.find(function(d){return d.id===id;});
+    if(!item)return;
+    document.getElementById('panelTitle').textContent = '编辑机柜 - ' + item.cabinetNo;
+    document.getElementById('panelBody').innerHTML = 
+        '<div class="form-group"><label>机柜编号</label><input type="text" id="editNo" value="'+item.cabinetNo+'"></div>' +
+        '<div class="form-group"><label>设备类型</label><input type="text" id="editType" value="'+item.deviceType+'"></div>' +
+        '<div class="form-group"><label>所属机组</label><select id="editUnit"><option value="3号机组" '+(item.unit==='3号机组'?'selected':'')+'>3号机组</option><option value="2号机组" '+(item.unit==='2号机组'?'selected':'')+'>2号机组</option></select></div>' +
+        '<div class="form-group"><label>在线状态</label><select id="editStatus"><option value="online" '+(item.status==='online'?'selected':'')+'>在线</option><option value="offline" '+(item.status==='offline'?'selected':'')+'>离线</option></select></div>' +
+        '<div class="form-group"><label>安装位置</label><input type="text" id="editLocation" value="'+item.location+'"></div>' +
+        '<div class="form-group"><label>备注</label><textarea id="editRemark"></textarea></div>' +
+        '<div class="form-btns"><button class="btn-save" onclick="saveEdit('+id+')">保存</button><button class="btn-cancel" onclick="closeSidePanel()">取消</button></div>';
+    document.getElementById('sidePanel').classList.add('show');
+}
+
+function saveEdit(id) {
+    var item = allData.find(function(d){return d.id===id;});
+    if(!item)return;
+    item.cabinetNo = document.getElementById('editNo').value;
+    item.deviceType = document.getElementById('editType').value;
+    item.unit = document.getElementById('editUnit').value;
+    item.status = document.getElementById('editStatus').value;
+    item.location = document.getElementById('editLocation').value;
+    renderTable();
+    closeSidePanel();
+    alert('编辑成功！');
+}
+
+// 报警设置面板
+function showAlarmPanel(id) {
+    var item = allData.find(function(d){return d.id===id;});
+    if(!item)return;
+    document.getElementById('panelTitle').textContent = '报警设置 - ' + item.cabinetNo;
+    var html = '<div class="alarm-settings">';
+    for(var i=0;i<6;i++) {
+        html += '<div class="alarm-zone"><div class="alarm-zone-title">分区'+(i+1)+'</div>' +
+            '<div class="alarm-inputs">' +
+            '<div><label style="font-size:11px;color:#4E5969;">参比下限(V)</label><input type="number" step="0.01" value="-0.95" id="alarmRef'+i+'"></div>' +
+            '<div><label style="font-size:11px;color:#4E5969;">参比上限(V)</label><input type="number" step="0.01" value="-0.80" id="alarmRefMax'+i+'"></div>' +
+            '<div><label style="font-size:11px;color:#4E5969;">电压下限(V)</label><input type="number" step="0.01" value="-2.0" id="alarmVolt'+i+'"></div>' +
+            '<div><label style="font-size:11px;color:#4E5969;">电流上限(A)</label><input type="number" step="0.01" value="5.0" id="alarmCurr'+i+'"></div>' +
+            '</div></div>';
+    }
+    html += '<div class="form-btns"><button class="btn-save" onclick="saveAlarm('+id+')">保存</button><button class="btn-cancel" onclick="closeSidePanel()">取消</button></div></div>';
+    document.getElementById('panelBody').innerHTML = html;
+    document.getElementById('sidePanel').classList.add('show');
+}
+
+function saveAlarm(id) {
+    alert('报警阈值已保存！');
+    closeSidePanel();
+}
+
+// 数据图表面板
+function showDataChart(id) {
+    var item = allData.find(function(d){return d.id===id;});
+    if(!item)return;
+    document.getElementById('dataPanelTitle').textContent = '数据图 - ' + item.cabinetNo;
+    document.getElementById('dataChartPanel').classList.add('show');
+    
+    // 设置默认时间范围（最近24小时）
+    var now = new Date();
+    var start = new Date(now.getTime() - 24*60*60*1000);
+    document.getElementById('endTime').value = now.toISOString().slice(0,16);
+    document.getElementById('startTime').value = start.toISOString().slice(0,16);
+    
+    setTimeout(function() {
+        renderDataChart();
+    }, 100);
+}
+
+function renderDataChart() {
+    var dataType = window.currentDataType || 'ref';
+    var times = Array.from({length:20},function(_,i){
+        var d=new Date();
+        d.setMinutes(d.getMinutes()-(20-i));
+        return d.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});
+    });
+    
+    var chart = echarts.init(document.getElementById('dataChartDiv'));
+    var series = [];
+    var yAxisName = '';
+    var baseValue = 0;
+    var variance = 0;
+    
+    if(dataType === 'ref') {
+        yAxisName = '参比电压 (V)';
+        baseValue = -0.87;
+        variance = 0.05;
+    } else if(dataType === 'voltage') {
+        yAxisName = '输出电压 (V)';
+        baseValue = -1.6;
+        variance = 0.2;
+    } else if(dataType === 'current') {
+        yAxisName = '输出电流 (A)';
+        baseValue = 2.5;
+        variance = 0.5;
+    }
+    
+    for(var i=0;i<6;i++) {
+        var data = [];
+        for(var j=0;j<20;j++) {
+            data.push((baseValue + (Math.random()-0.5)*variance).toFixed(3));
+        }
+        series.push({
+            name:'分区'+(i+1),
+            type:'line',
+            smooth:true,
+            data:data,
+            lineStyle:{color:ZONE_COLORS[i],width:2.5},
+            symbol:'circle',
+            symbolSize:4
+        });
+    }
+    
+    chart.setOption({
+        tooltip:{trigger:'axis'},
+        legend:{data:['分区1','分区2','分区3','分区4','分区5','分区6'],top:5,textStyle:{fontSize:12}},
+        grid:{left:60,right:20,top:50,bottom:40},
+        xAxis:{type:'category',data:times,axisLabel:{fontSize:11}},
+        yAxis:{type:'value',name:yAxisName,axisLabel:{fontSize:11},splitLine:{lineStyle:{color:'#F0F0F0'}}},
+        series:series
+    });
+    
+    // 生成数据表
+    var tbody = document.getElementById('dataTableBody');
+    tbody.innerHTML = times.map(function(t,i){
+        var row = '<tr><td>'+t+'</td>';
+        for(var j=0;j<6;j++) {
+            row += '<td>'+(baseValue + (Math.random()-0.5)*variance).toFixed(3)+'</td>';
+        }
+        row += '</tr>';
+        return row;
+    }).join('');
+}
+
+function switchDataType(type) {
+    window.currentDataType = type;
+    
+    // 更新按钮状态
+    document.querySelectorAll('.data-type-btn').forEach(function(btn) {
+        btn.classList.remove('active');
+    });
+    event.target.classList.add('active');
+    
+    // 重新渲染
+    renderDataChart();
+}
+
+function queryDataChart() {
+    var start = document.getElementById('startTime').value;
+    var end = document.getElementById('endTime').value;
+    if(!start || !end) {
+        alert('请选择时间范围');
+        return;
+    }
+    var startDate = new Date(start);
+    var endDate = new Date(end);
+    if(startDate >= endDate) {
+        alert('开始时间必须早于结束时间');
+        return;
+    }
+    alert('查询时间范围: ' + start + ' 至 ' + end);
+    renderDataChart();
+}
+
+function exportDataChart() {
+    var tbody = document.getElementById('dataTableBody');
+    var rows = tbody.querySelectorAll('tr');
+    if(rows.length === 0) {
+        alert('没有数据可导出');
+        return;
+    }
+    var csv = '\ufeff时间,分区1,分区2,分区3,分区4,分区5,分区6\n';
+    rows.forEach(function(row) {
+        var cells = row.querySelectorAll('td');
+        var line = Array.from(cells).map(function(c){return c.textContent;}).join(',');
+        csv += line + '\n';
+    });
+    var blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = '数据图_' + new Date().toISOString().slice(0,10) + '.csv';
+    a.click();
+    alert('导出成功！');
+}
+
+function closeDataChartPanel() {
+    document.getElementById('dataChartPanel').classList.remove('show');
+}
+
+function saveDataModify(id) {
+    alert('数据已修改！');
+    closeSidePanel();
+}
+
+function closeSidePanel() {
+    document.getElementById('sidePanel').classList.remove('show');
+}
+
+
+function closeModal() {
+        document.getElementById('detailModal').classList.remove('show');
+        if(chartRef){chartRef.dispose();chartRef=null;}
+        if(chartVolt){chartVolt.dispose();chartVolt=null;}
+        if(chartCurr){chartCurr.dispose();chartCurr=null;}
+    }
+</script>
+
+    <!-- 右侧滑出面板 -->
+    <div class="side-panel" id="sidePanel">
+        <div class="panel-head">
+            <h3 id="panelTitle">编辑机柜</h3>
+            <button class="panel-close" onclick="closeSidePanel()">✕</button>
+        </div>
+        <div class="panel-body" id="panelBody"></div>
+    </div>
+
+    <!-- 数据图大屏 -->
+    <div class="data-chart-panel" id="dataChartPanel">
+        <div class="panel-head">
+            <h3 id="dataPanelTitle">数据图</h3>
+            <button class="panel-close" onclick="closeDataChartPanel()">✕</button>
+        </div>
+        <div class="panel-body">
+            <div class="data-type-btns">
+                <button class="data-type-btn active" onclick="switchDataType('ref')">参比</button>
+                <button class="data-type-btn" onclick="switchDataType('voltage')">电压</button>
+                <button class="data-type-btn" onclick="switchDataType('current')">电流</button>
+            </div>
+            <div class="query-bar">
+                <div class="form-group">
+                    <label>开始时间</label>
+                    <input type="datetime-local" id="startTime">
+                </div>
+                <div class="form-group">
+                    <label>结束时间</label>
+                    <input type="datetime-local" id="endTime">
+                </div>
+                <button class="btn btn-primary" onclick="queryDataChart()">查询</button>
+                <button class="btn btn-default" onclick="exportDataChart()">导出</button>
+            </div>
+            <div class="data-chart" id="dataChartDiv"></div>
+            <div class="data-table-wrapper">
+                <table class="data-table">
+                    <thead>
+                        <tr><th>时间</th><th>分区1</th><th>分区2</th><th>分区3</th><th>分区4</th><th>分区5</th><th>分区6</th></tr>
+                    </thead>
+                    <tbody id="dataTableBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
